@@ -6,7 +6,7 @@ location_point = (-2.427944, -54.714781)
 def main():
     G = ox.graph.graph_from_point(
         location_point,
-        dist=3700,
+        dist=1800,
         network_type="drive_service",
         simplify=False
     )
@@ -41,9 +41,9 @@ def main():
 
     # ec = ox.plot.get_edge_colors_by_attr(G, attr="length", cmap="plasma_r") # Destaca o comprimento das ruas
     # ec = ["gray" if k == 0 or u == v else "r" for u, v, k in G.edges(keys=True)] # Destaca as ruas sem conexão
-    ec = ["blue" if data["oneway"] else "w" for u, v, key, data in G.edges(keys=True, data=True)] # Destaca as ruas de mão única
+    # ec = ["blue" if data["oneway"] else "w" for u, v, key, data in G.edges(keys=True, data=True)] # Destaca as ruas de mão única
 
-    ox.io.save_graphml(G, filepath=".data/network.graphml")
+    # ox.io.save_graphml(G, filepath=".data/network.graphml")
 
     # route1_length = int(sum(ox.routing.route_to_gdf(G, route1, weight="length")["length"]))
     # route2_length = int(sum(ox.routing.route_to_gdf(G, route2, weight="travel_time")["length"]))
@@ -52,16 +52,25 @@ def main():
     # print(f"Rota 1 - Distância: {route1_length}m | Tempo: {route1_time}s")
     # print(f"Rota 2 - Distância: {route2_length}m | Tempo: {route2_time}s")
 
-    fig, ax = ox.plot.plot_graph(
-        G,
-        # routes=[route1, route2],
-        # route_colors=["r", "y"],
-        node_color="w",
-        node_edgecolor="k",
-        node_size=5,
-        edge_color=ec,
-        edge_linewidth=1.5
+    # fig, ax = ox.plot.plot_graph(
+    #     G,
+    #     # routes=[route1, route2],
+    #     # route_colors=["r", "y"],
+    #     node_color="w",
+    #     node_edgecolor="k",
+    #     node_size=5,
+    #     edge_color=ec,
+    #     edge_linewidth=1.5
+    # )
+
+    nodes, edges = ox.convert.graph_to_gdfs(G)
+    m = edges.explore(
+        color="travel_time",
+        cmap="plasma",
+        tiles="cartodbdarkmatter",
+        control_scale=False
     )
+    nodes.explore(m=m, color="white", marker_kwds={"r": 6, "fill": True}, control_scale=False).save(".data/map.html")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "folium>=0.12",
+    "mapclassify>=2.10.0",
     "matplotlib>=3.10.5",
     "osmnx>=2.0.6",
 ]
