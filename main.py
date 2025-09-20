@@ -1,5 +1,10 @@
 import networkx as nx
 import osmnx as ox
+import pygame
+import random
+import math
+from classes import Vehicle
+from typing import List
 
 location_point = (-2.427944, -54.714781)
 
@@ -23,7 +28,6 @@ def main():
 
     edges = ox.convert.graph_to_gdfs(G, nodes=False)
     edges["highway"] = edges["highway"].astype(str)
-    # edges.groupby("highway")[["length", "speed_kph", "travel_time"]].mean().round(1)
 
     hwy_speeds = {
         "residential": 35,
@@ -34,44 +38,66 @@ def main():
     G = ox.routing.add_edge_speeds(G, hwy_speeds=hwy_speeds)
     G = ox.routing.add_edge_travel_times(G)
 
-    # orig = list(G.nodes)[321]
-    # dest = list(G.nodes)[123]
-    # route1 = ox.routing.shortest_path(G, orig=orig, dest=dest, weight="length")
-    # route2 = ox.routing.shortest_path(G, orig=orig, dest=dest, weight="travel_time")
-
-    # ec = ox.plot.get_edge_colors_by_attr(G, attr="length", cmap="plasma_r") # Destaca o comprimento das ruas
-    # ec = ["gray" if k == 0 or u == v else "r" for u, v, k in G.edges(keys=True)] # Destaca as ruas sem conexão
-    # ec = ["blue" if data["oneway"] else "w" for u, v, key, data in G.edges(keys=True, data=True)] # Destaca as ruas de mão única
-
-    # ox.io.save_graphml(G, filepath=".data/network.graphml")
-
-    # route1_length = int(sum(ox.routing.route_to_gdf(G, route1, weight="length")["length"]))
-    # route2_length = int(sum(ox.routing.route_to_gdf(G, route2, weight="travel_time")["length"]))
-    # route1_time = int(sum(ox.routing.route_to_gdf(G, route1, weight="length")["travel_time"]))
-    # route2_time = int(sum(ox.routing.route_to_gdf(G, route2, weight="travel_time")["travel_time"]))
-    # print(f"Rota 1 - Distância: {route1_length}m | Tempo: {route1_time}s")
-    # print(f"Rota 2 - Distância: {route2_length}m | Tempo: {route2_time}s")
-
-    # fig, ax = ox.plot.plot_graph(
-    #     G,
-    #     # routes=[route1, route2],
-    #     # route_colors=["r", "y"],
-    #     node_color="w",
-    #     node_edgecolor="k",
-    #     node_size=5,
-    #     edge_color=ec,
-    #     edge_linewidth=1.5
-    # )
-
     nodes, edges = ox.convert.graph_to_gdfs(G)
-    m = edges.explore(
-        color="travel_time",
-        cmap="plasma",
-        tiles="cartodbdarkmatter",
-        control_scale=False
-    )
-    nodes.explore(m=m, color="white", marker_kwds={"r": 6, "fill": True}, control_scale=False).save(".data/map.html")
+    x = nodes["x"].values
+    y = nodes["y"].values
+    min_x, max_x = x.min(), x.max()
+    min_y, max_y = y.min(), y.max()
 
+    def norm_x(coord):
+        return int((coord - min_x) / (max_x - min_x) * WIDHT)
+
+    def norm_y(coord):
+        return HEIGHT - int((coord - min_y) / (max_y - min_y) * HEIGHT)
+    
+    pygame.init()
+    WIDHT, HEIGHT = 800, 600
+    win = pygame.display.set_mode((WIDHT, HEIGHT))
+
+    nos = list(G.nodes)
+    vehicles: List[Vehicle] = []
+    for _ in range(10):
+        orig, dest = random.sample(nos, 2)
+        
+        try:
+            path = nx.shortest_path(G, orig, dest, weight="travel_time")
+            vehicles.append(Vehicle(path_nodes=path, G=G))
+        except nx.NetworkXNoPath:
+            print(f"No path between {orig} and {dest}")
+
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        dt = clock.tick(30) / 1000.0
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+        
+        # 
+        win.fill((30, 30, 30))
+
+        # Desenha as ruas
+        for u, v in G.edges():
+            x1, y1 = norm_x(G.nodes[u]["x"]), norm_y(G.nodes[u]["y"])
+            x2, y2 = norm_x(G.nodes[v]["x"]), norm_y(G.nodes[v]["y"])
+            pygame.draw.line(win, (200, 200, 200), (x1, y1), (x2, y2), 1)
+
+        # Desenha e atualiza os veículos
+        for vehicle in vehicles:
+            vehicle.update(dt=dt)
+            if vehicle.finished:
+                vehicles.remove(vehicle)
+
+            pos = vehicle.current_edge()
+            if pos:
+                x, y = norm_x(pos[0]), norm_y(pos[1])
+                pygame.draw.circle(win, vehicle.color, (x, y), 4)
+
+        pygame.display.flip()
+    pygame.quit()
+    
 
 if __name__ == "__main__":
     main()

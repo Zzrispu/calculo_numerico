@@ -9,4 +9,5 @@ dependencies = [
     "mapclassify>=2.10.0",
     "matplotlib>=3.10.5",
     "osmnx>=2.0.6",
+    "pygame>=2.6.1",
 ]
