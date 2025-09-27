@@ -3,40 +3,15 @@ import osmnx as ox
 import pygame
 import random
 import math
-from classes import Vehicle
+from classes.vehicle import Vehicle
+from classes.trafficLight import TrafficLight
 from typing import List
 
 location_point = (-2.427944, -54.714781)
+WIDTH, HEIGHT = 1000, 800
 
 def main():
-    G = ox.graph.graph_from_point(
-        location_point,
-        dist=1800,
-        network_type="drive_service",
-        simplify=False
-    )
-
-    G = ox.simplification.simplify_graph(G)
-
-    G_proj = ox.project_graph(G)
-    G = ox.consolidate_intersections(
-        G_proj,
-        rebuild_graph=True,
-        tolerance=15,
-        dead_ends=False
-    )
-
-    edges = ox.convert.graph_to_gdfs(G, nodes=False)
-    edges["highway"] = edges["highway"].astype(str)
-
-    hwy_speeds = {
-        "residential": 35,
-        "secundary": 50,
-        "tertiary": 60
-    }
-
-    G = ox.routing.add_edge_speeds(G, hwy_speeds=hwy_speeds)
-    G = ox.routing.add_edge_travel_times(G)
+    G = ox.load_graphml(filepath='./data/network.graphml')
 
     nodes, edges = ox.convert.graph_to_gdfs(G)
     x = nodes["x"].values
@@ -45,43 +20,16 @@ def main():
     min_y, max_y = y.min(), y.max()
 
     def norm_x(coord):
-        return int((coord - min_x) / (max_x - min_x) * WIDHT)
+        return int((coord - min_x) / (max_x - min_x) * WIDTH)
 
     def norm_y(coord):
         return HEIGHT - int((coord - min_y) / (max_y - min_y) * HEIGHT)
     
-    # Inicializando o Pygame
-    pygame.init()
-    WIDHT, HEIGHT = 800, 600
-    win = pygame.display.set_mode((WIDHT, HEIGHT))
-    pygame.display.set_caption("Simulação de Tráfego")
-    font = pygame.font.SysFont("Arial", 16)
-
-    nos = list(G.nodes)
-
-    # Inicia os Veículos
-    vehicles: List[Vehicle] = []
-    for _ in range(20): # Quantidade de Veículso que tatará ser spawnado
-        orig, dest = random.sample(nos, 2)
-        
-        try:
-            path = nx.shortest_path(G, orig, dest, weight="travel_time")
-            vehicles.append(Vehicle(path_nodes=path, G=G))
-        except nx.NetworkXNoPath:
-            print(f"No path between {orig} and {dest}")
-    selected_vehicle = None
-
-    clock = pygame.time.Clock()
-    running = True
-
-    # UI de texto
-    info_text = ""
-
-    def egde_distance(px: int, py: int, x1: int, y1: int, x2: int, y2: int):
+    def edge_distance(px, py, x1, y1, x2, y2):
         A = px - x1
         B = py - y1
         C = x2 - x1
-        D = y2 - x2
+        D = y2 - y1
 
         dot = A * C + B * D
         len_sq = C * C + D * D
@@ -91,6 +39,72 @@ def main():
         yy = y1 + t * D
         return math.hypot(px - xx, py - yy)
 
+    def point_to_edge_distance(px: int, py: int, u:int, v:int, data: dict):
+        if "geometry" in data and data["geometry"] is not None:
+            coords_geo = list(data["geometry"].coords)
+        else:
+            coords_geo = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
+        
+        screen_coords = [(norm_x(cx), norm_y(cy)) for cx, cy in coords_geo]
+
+        xs = [c[0] for c in screen_coords]
+        ys = [c[1] for c in screen_coords]
+        bbox_tol = 6
+        if px < min(xs) - bbox_tol or px > max(xs) + bbox_tol or py < min(ys) - bbox_tol or py > max(ys) + bbox_tol:
+            return float("inf")
+        
+        min_dist = float("inf")
+        for i in range(len(screen_coords) - 1):
+            x1, y1 = screen_coords[i]
+            x2, y2 = screen_coords[i + 1]
+            d = edge_distance(px, py, x1, y1, x2, y2)
+            if d < min_dist:
+                min_dist = d
+        return min_dist
+    
+    def get_closest_node(mx: int, my: int):
+        min_dist = float("inf")
+        closest_node = None
+        for node, data in G.nodes(data=True):
+            x, y = norm_x(data["x"]), norm_y(data["y"])
+            dist = math.hypot(mx - x, my - y)
+            if dist < min_dist:
+                min_dist = dist
+                closest_node = node
+        return closest_node, min_dist
+
+    # Inicializando o Pygame
+    pygame.init()
+    win = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("Simulação de Tráfego")
+    font = pygame.font.SysFont("Arial", 16)
+    
+    nos = list(G.nodes)
+
+    # Inicia os Veículos
+    vehicles: List[Vehicle] = []
+    for _ in range(40): # Quantidade de Veículso que tatará ser spawnado
+        orig, dest = random.sample(nos, 2)
+        
+        try:
+            path = nx.shortest_path(G, orig, dest, weight="travel_time")
+            vehicles.append(Vehicle(path_nodes=path, G=G))
+        except nx.NetworkXNoPath:
+            print(f"No path between {orig} and {dest}")
+
+    # Inicia os Semáforos
+    traffic_lights: List[TrafficLight] = []
+    
+    selected_vehicle = None
+    selected_edge = None
+
+    clock = pygame.time.Clock()
+    running = True
+
+    # UI de texto
+    info_text = ""
+
+    # GAME LOOP
     while running:
         dt = clock.tick(30) / 1000.0
 
@@ -103,43 +117,88 @@ def main():
                 mx, my = event.pos
                 clicked = False
 
-                # Verifica clique em veículos
-                for vehicle in vehicles:
-                    pos = vehicle.current_edge()
-                    if pos:
-                        x = norm_x(pos[0])
-                        y = norm_y(pos[1])
-                        if math.hypot(mx - x, my - y) < 6:
-                            info_text = f"ID: {vehicle.id} | Vel: {vehicle.speed:.1f} m/s | Index rota: {vehicle.edge_index}/{len(vehicle.path_nodes)}"
-                            selected_vehicle = vehicle
-                            clicked = True
-                            break
-                
-                # Verificar clique me ruas (arestas)
-                if not clicked:
-                    selected_vehicle = None
-                    for u, v, data in G.edges(data=True):
-                        x1, y1 = norm_x(G.nodes[u]["x"]), norm_y(G.nodes[u]["y"])
-                        x2, y2 = norm_x(G.nodes[v]["x"]), norm_y(G.nodes[v]["y"])
-                        dist = egde_distance(mx, my, x1, y1, x2, y2)
-                        if dist < 2: # tolerância de clique em pixels
+                # Detecta o click esquerdo do mouse
+                if event.button == 1:
+                    # Verifica clique em veículos
+                    for vehicle in vehicles:
+                        pos = vehicle.current_edge()
+                        if pos:
+                            x = norm_x(pos[0])
+                            y = norm_y(pos[1])
+                            if math.hypot(mx - x, my - y) < 6:
+                                info_text = f"ID: {vehicle.id} | Vel: {vehicle.speed:.1f} m/s | Index rota: {vehicle.edge_index}/{len(vehicle.path_nodes)}"
+                                selected_vehicle = vehicle
+                                clicked = True
+                                break
+                    
+                    # Verificar clique me ruas (arestas)
+                    if not clicked:
+                        closest = None
+                        min_dist = float('inf')
+
+                        for u, v, k, data in G.edges(keys=True, data=True):
+                            dist = point_to_edge_distance(mx, my, u, v, data)
+                            if dist < min_dist:
+                                min_dist = dist
+                                closest = (u, v, k, data)
+
+                        if closest and min_dist < 4: # tolerância de clique em pixels
+                            u, v, k, data = closest
                             name = data.get("name", "Sem nome")
-                            vel = data.get("maxspeed", "N/A")
+
+                            vel = data.get("maxspeed") or data.get("speed_kph") or data.get("speed") or "N/A"
+                            if isinstance(vel, (list, tuple)):
+                                vel = vel[0] if vel else "N/A"
+                            elif isinstance(vel, str):
+                                import re
+                                m = re.search(r"\d+", vel)
+                                vel = m.group(0) if m else vel
+
                             comp = data.get("length", 0)
                             info_text = f"Nome: {name} | Vel Máx: {vel} | Comp: {comp:.1f} m"
+                            selected_vehicle = None
+                            selected_edge = (u, v, k)
                             clicked = True
                             break
+
+                # Detecta o click direito do mouse
+                elif event.button == 3:
+                    node, dist = get_closest_node(mx, my)
+
+                    if node and G.nodes[node].get("traffic_light") is not None and dist < 6:
+                        traffic_lights.remove(G.nodes[node]["traffic_light"])
+                        G.nodes[node]["traffic_light"] = None
+                        info_text = f"🚦 Semáforo removido no nó {node}"
+
+                    elif node and dist < 6:
+                        pos = (G.nodes[node]["x"], G.nodes[node]["y"])
+                        traffic_light = TrafficLight(pos)
+                        G.nodes[node]["traffic_light"] = traffic_light
+                        traffic_lights.append(traffic_light)
+                        info_text = f"🚦 Semáforo adicionado no nó {node}"
+
+                    clicked = True
                 
                 if not clicked: 
                     info_text = ""
+                    selected_vehicle = None
+                    selected_edge = None
         
         win.fill((30, 30, 30))
 
         # Desenha as ruas
-        for u, v in G.edges():
+        for u, v, k in G.edges(keys=True):
             x1, y1 = norm_x(G.nodes[u]["x"]), norm_y(G.nodes[u]["y"])
             x2, y2 = norm_x(G.nodes[v]["x"]), norm_y(G.nodes[v]["y"])
-            pygame.draw.line(win, (200, 200, 200), (x1, y1), (x2, y2), 2)
+
+            color = (200, 200, 200)
+            width = 2
+
+            if selected_edge == (u, v, k):
+                color = (200, 0, 200)
+                width = 4
+            
+            pygame.draw.line(win, color, (x1, y1), (x2, y2), width=width)
 
         # Desenha e atualiza os veículos
         for vehicle in vehicles:
@@ -160,6 +219,13 @@ def main():
                 x1, y1 = norm_x(G.nodes[u]["x"]), norm_y(G.nodes[u]["y"])
                 x2, y2 = norm_x(G.nodes[v]["x"]), norm_y(G.nodes[v]["y"])
                 pygame.draw.line(win, (0, 200, 0), (x1, y1), (x2, y2), 3)
+
+        # Desenha e atualiza os semáforos
+        for traffic_light in traffic_lights:
+            traffic_light.update(dt)
+            x, y = norm_x(traffic_light.coords[0]), norm_y(traffic_light.coords[1])
+            color = (0, 255, 0) if traffic_light.isGreen else (255, 0, 0)
+            pygame.draw.circle(win, color, (x, y), 5)
 
         # Desenhar UI
         if info_text:
