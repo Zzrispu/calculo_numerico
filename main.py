@@ -154,8 +154,10 @@ def main():
                                 m = re.search(r"\d+", vel)
                                 vel = m.group(0) if m else vel
 
+                            vehicles_ = data.get("vehicles", "")
+
                             comp = data.get("length", 0)
-                            info_text = f"Nome: {name} | Vel Máx: {vel} | Comp: {comp:.1f} m"
+                            info_text = f"Nome: {name} | Vel Máx: {vel} | Comp: {comp:.1f} m | Qtd. Veículos: {len(vehicles_)}"
                             selected_vehicle = None
                             selected_edge = (u, v, k)
                             clicked = True
@@ -175,7 +177,7 @@ def main():
                         traffic_light = TrafficLight(pos)
                         G.nodes[node]["traffic_light"] = traffic_light
                         traffic_lights.append(traffic_light)
-                        info_text = f"🚦 Semáforo adicionado no nó {node}"
+                        info_text = f"Semáforo adicionado no nó {node}"
 
                     clicked = True
                 

@@ -14,14 +14,32 @@ class Vehicle:
     self.speed = random.uniform(10.0, 25.0) # m/s
     self.finished = False
     self.color = (random.randint(50, 255), random.randint(50, 255), random.randint(50, 255))
+
+  def __str__(self):
+    return self.id
+
+  def __get_current_edge_data(self):
+    if self.edge_index >= len(self.path_nodes) -1: return None
+    u = self.path_nodes[self.edge_index]
+    v = self.path_nodes[self.edge_index + 1]
+    edge_data = self.G.get_edge_data( u, v, 0)
+    return edge_data, u, v
+
+  def __register_on_edge(self, edge_data):
+    if edge_data is not None and "vehicles" not in edge_data:
+      edge_data["vehicles"] = []
+    edge_data["vehicles"].append(self)
+
+  def __unregister_from_edge(self, edge_data):
+    if edge_data is not None and "vehicles" in edge_data:
+      if self in edge_data["vehicles"]:
+        edge_data["vehicles"].remove(self)
     
   def current_edge(self):
     if self.edge_index >= len(self.path_nodes) -1:
       return None
     
-    u = self.path_nodes[self.edge_index]
-    v = self.path_nodes[self.edge_index + 1]
-    edge_data = self.G.get_edge_data( u, v, 0)
+    edge_data, u, v = self.__get_current_edge_data()
     lenth = edge_data['length']
 
     x1, y1 = self.G.nodes[u]['x'], self.G.nodes[u]['y']
@@ -37,12 +55,20 @@ class Vehicle:
       self.finished = True
       return
     
-    u = self.path_nodes[self.edge_index]
-    v = self.path_nodes[self.edge_index + 1]
-    edge_data = self.G.get_edge_data( u, v, 0)
+    edge_data, u, v = self.__get_current_edge_data()
     lenth = edge_data['length']
+
+    # Se o veículo estiver em um nó onde há um semáforo vermelho, ele não avança
+    traffic_light = self.G.nodes[v].get("traffic_light")
+    if traffic_light is not None and not traffic_light.isGreen:
+      dist_to_tl = lenth - self.progress
+      if dist_to_tl <= 10: return
 
     self.progress += self.speed * dt
     if self.progress >= lenth:
+      self.__unregister_from_edge(edge_data)
       self.progress = 0.0
       self.edge_index += 1
+
+      next_edge = self.__get_current_edge_data()
+      if next_edge is not None: self.__register_on_edge(next_edge[0])
