@@ -51,18 +51,27 @@ class Vehicle:
     return x, y
   
   def update(self, dt):
-    if self.edge_index >= len(self.path_nodes) -1:
+    if self.edge_index >= len(self.path_nodes) - 1:
       self.finished = True
       return
-    
+
     edge_data, u, v = self.__get_current_edge_data()
     lenth = edge_data['length']
 
-    # Se o veículo estiver em um nó onde há um semáforo vermelho, ele não avança
     traffic_light = self.G.nodes[v].get("traffic_light")
     if traffic_light is not None and not traffic_light.isGreen:
       dist_to_tl = lenth - self.progress
-      if dist_to_tl <= 10: return
+      if dist_to_tl <= 10:
+        self.progress = lenth - 10
+        return
+
+      if "vehicles" in edge_data:
+        for other_vehicle in edge_data["vehicles"]:
+          if other_vehicle is not self and other_vehicle.progress > self.progress:
+            dist_to_vehicle = other_vehicle.progress - self.progress
+            if dist_to_vehicle <= 5:
+              self.progress = other_vehicle.progress - 5
+              return
 
     self.progress += self.speed * dt
     if self.progress >= lenth:
@@ -71,4 +80,5 @@ class Vehicle:
       self.edge_index += 1
 
       next_edge = self.__get_current_edge_data()
-      if next_edge is not None: self.__register_on_edge(next_edge[0])
+      if next_edge is not None:
+        self.__register_on_edge(next_edge[0])

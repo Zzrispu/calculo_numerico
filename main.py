@@ -16,14 +16,24 @@ def main():
     nodes, edges = ox.convert.graph_to_gdfs(G)
     x = nodes["x"].values
     y = nodes["y"].values
+    zoom = 1.0
+    zoom_speed = 0.2
+    offset_x = 0
+    offset_y = 0
     min_x, max_x = x.min(), x.max()
     min_y, max_y = y.min(), y.max()
 
+    dragging = False
+    last_mouse_pos = None
+
     def norm_x(coord):
-        return int((coord - min_x) / (max_x - min_x) * WIDTH)
+        normalized_x = (coord - min_x) / (max_x - min_x) * WIDTH
+        return int((normalized_x - WIDTH / 2 + offset_x) * zoom + WIDTH / 2)
+    # normalized_x - WIDTH / 2 | Centraliza o zoom no meio da tela
 
     def norm_y(coord):
-        return HEIGHT - int((coord - min_y) / (max_y - min_y) * HEIGHT)
+        normalized_y = HEIGHT - (coord - min_y) / (max_y - min_y) * HEIGHT
+        return int((normalized_y - HEIGHT / 2 + offset_y) * zoom + HEIGHT / 2)
     
     def edge_distance(px, py, x1, y1, x2, y2):
         A = px - x1
@@ -77,13 +87,13 @@ def main():
     pygame.init()
     win = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Simulação de Tráfego")
-    font = pygame.font.SysFont("Arial", 16)
+    font = pygame.font.SysFont("Arial", 18)
     
     nos = list(G.nodes)
 
     # Inicia os Veículos
     vehicles: List[Vehicle] = []
-    for _ in range(40): # Quantidade de Veículso que tatará ser spawnado
+    for _ in range(60): # Quantidade de Veículso que tatará ser spawnado
         orig, dest = random.sample(nos, 2)
         
         try:
@@ -113,6 +123,7 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             
+            # Detecta quando um botão do mouse é precionado
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
                 clicked = False
@@ -163,6 +174,11 @@ def main():
                             clicked = True
                             break
 
+                # Detecta o click do meio do mouse (scroll)
+                elif event.button == 2:
+                    dragging = True
+                    last_mouse_pos = event.pos
+
                 # Detecta o click direito do mouse
                 elif event.button == 3:
                     node, dist = get_closest_node(mx, my)
@@ -170,7 +186,7 @@ def main():
                     if node and G.nodes[node].get("traffic_light") is not None and dist < 6:
                         traffic_lights.remove(G.nodes[node]["traffic_light"])
                         G.nodes[node]["traffic_light"] = None
-                        info_text = f"🚦 Semáforo removido no nó {node}"
+                        info_text = f"Semáforo removido no nó {node}"
 
                     elif node and dist < 6:
                         pos = (G.nodes[node]["x"], G.nodes[node]["y"])
@@ -185,7 +201,28 @@ def main():
                     info_text = ""
                     selected_vehicle = None
                     selected_edge = None
-        
+            
+            # Detecta quando um botão do mouse é solto
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 2:
+                    dragging = False
+
+            # Detecta o scroll do mouse
+            elif event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    zoom = min(zoom + zoom_speed, 6) # zoom in maxímo
+                elif event.y < 0:
+                    zoom = max(zoom - (zoom_speed * 2), 1) # zoom out maxímo
+
+            # Detecta o movimento do mouse
+            elif event.type == pygame.MOUSEMOTION:
+                if dragging:
+                    mx, my = event.pos
+                    lx, ly = last_mouse_pos
+                    offset_x += (mx - lx) / zoom
+                    offset_y += (my - ly) / zoom
+                    last_mouse_pos = (mx, my)
+
         win.fill((30, 30, 30))
 
         # Desenha as ruas
